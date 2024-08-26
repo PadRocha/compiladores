@@ -1,18 +1,88 @@
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
+import { resolve } from "path";
+import { exit } from "process";
+
 class Translate {
-  public tokens: Map<string, string>;
-  private token_count: number;
+  tokens: Map<string, string>;
+  private count_c: number;
 
   constructor(public line: string) {
     this.tokens = new Map();
-    this.token_count = 0;
+    this.count_c = 0;
+  }
+
+  private clean(line: string) {
+    let accumulator = "";
+    let last = "";
+    let temp = "";
+    let is_log = false;
+
+    for (const char of line) {
+      if (/\s/.test(char)) continue;
+
+      if (temp === "l" && char === "o") {
+        temp += char;
+        continue;
+      } else if (temp === "lo" && char === "g") {
+        temp += char;
+        is_log = true;
+        if (!!last && !/[+\-*^\\(/]/.test(last)) {
+          accumulator += "*";
+        }
+        continue;
+      } else if (temp.length > 0) {
+        accumulator += temp;
+        temp = "";
+      }
+
+      if (is_log) {
+        if (char == "_") {
+          temp += last = char;
+          continue;
+        } else if (last == "_" && /[\d]/.test(char)) {
+          temp += char;
+          continue;
+        } else if (char === "(") {
+          accumulator += temp + char;
+          is_log = false;
+          temp = "";
+          continue;
+        } else {
+          throw new SyntaxError("La expresión del logaritmo no es válida.");
+        }
+      }
+
+      if (char === "l") {
+        temp = "l";
+        continue;
+      }
+
+      if (!!last) {
+        if (/[+\-^]/.test(last) && last === char) continue;
+
+        if ((char === "\\" || char === "(") && !/[+\-*^\\(/]/.test(last)) {
+          accumulator += "*";
+          last = "*";
+        }
+
+        if (last === "*" && char === "*") {
+          accumulator += "0";
+          last = "0";
+        }
+      }
+
+      accumulator += char;
+      last = char;
+    }
+
+    return accumulator;
   }
 
   private process(line: string, is_root: boolean = false): string {
-    const char_s = is_root ? "\\" : "(";
-    const char_e = is_root ? "/" : ")";
-    let counter = 0;
-    let flag = false;
+    const open_c = is_root ? "\\" : "(";
+    const close_c = is_root ? "/" : ")";
     let accumulator = "";
+    let count_c = 0;
     let index = 0;
     let is_digit = true;
 
@@ -20,37 +90,43 @@ class Translate {
 
     for (let i = line.length - 1; i >= 0; i--) {
       const char = line[i];
-      if (/\s/.test(char)) continue;
-      if (char === char_e) {
-        if (!flag) {
-          flag = true;
+      if (char === close_c) {
+        if (count_c === 0) {
           index = i + (is_root ? 0 : 1);
+          count_c = 1;
         } else {
-          counter++;
+          count_c++;
           accumulator = char + accumulator;
         }
-      } else if (char === char_s) {
-        if (counter > 0) {
-          counter--;
-          accumulator = char + accumulator;
-        } else {
+      } else if (char === open_c) {
+        if (count_c === 1) {
           if (!is_digit || !is_root) {
-            const token = `&${this.token_count++}`;
+            const token = "&" + this.count_c++;
             const start = i + (is_root ? 1 : 0);
             line = line.slice(0, start) + token + line.slice(index);
             accumulator = this.transform(accumulator);
             this.tokens.set(token, accumulator);
           }
-          flag = false;
+          count_c = 0;
           is_digit = true;
           accumulator = "";
+        } else {
+          count_c--;
+          if (count_c < 0) {
+            throw new SyntaxError("Falta cerrar un paréntesis o raíz.");
+          }
+          accumulator = char + accumulator;
         }
-      } else if (flag) {
+      } else if (count_c > 0) {
         accumulator = char + accumulator;
         if (!/[&\d\w]/.test(char)) {
           is_digit = false;
         }
       }
+    }
+
+    if (count_c > 0) {
+      throw new SyntaxError("Hay un paréntesis o raiz sin abrir.");
     }
 
     return line;
@@ -61,45 +137,56 @@ class Translate {
   }
 
   private translate(line: string): string {
-    let flag = false;
+    let is_root = false;
+    let is_power = false;
+    let is_logarithm = false;
     let radical = false;
-    let accumulator = "";
-    let op = 0;
+    let base = false;
+    let argument = false;
     let aux = "";
+    let accumulator = "";
     let lhs = "";
     let rhs = "";
-    let is_token = true;
 
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
-      if (/\s/.test(char)) continue;
-      // if (/[+\-*:\\/]/.test(char) && !flag) {
-      //   lhs = "";
-      //   flag = true;
-      // } else {
-      //   lhs += char;
-      // }
 
-      if (flag) {
+      if (/\s/.test(char)) continue;
+
+      if (is_root) {
         if (radical) {
-          if (i == line.length - 1 || /[+\-*:^]/.test(char)) {
+          if (i == line.length - 1 || /[+\-*:^=]/.test(char)) {
+            if (/^&\d+$/.test(lhs)) {
+              const token = this.tokens.get(lhs);
+              if (!!token) {
+                lhs = "(" + this.translate(token) + ")";
+              }
+            }
             if (i == line.length - 1) {
               rhs += char;
             }
-            if (lhs === "2") {
-              accumulator += `sqrt(${rhs})`;
+            rhs = this.translate(rhs);
+            if (!/[&^]/.test(char)) {
+              if (lhs === "2") {
+                accumulator += `sqrt(${rhs})`;
+              } else {
+                accumulator += `pow(${rhs}, 1/${lhs})`;
+              }
+              if (/[+\-*:=]/.test(char)) {
+                accumulator += char;
+              }
             } else {
-              accumulator += `pow(${rhs}, 1 / (${lhs}))`;
+              if (lhs === "2") {
+                aux = `sqrt(${rhs})`;
+              } else {
+                aux = `pow(${rhs}, 1/${lhs})`;
+              }
             }
-            flag = false;
+            is_root = false;
             radical = false;
             lhs = "";
             rhs = "";
-            if (/[+\-*:^]/.test(char)) {
-              accumulator += char;
-            }
           } else {
-            console.log("reading rhs");
             rhs += char;
           }
         } else if (char === "/") {
@@ -108,41 +195,155 @@ class Translate {
           lhs += char;
         }
       } else if (char === "\\") {
-        flag = true;
-      } else {
-        accumulator += char;
+        is_root = true;
+      } else if (!is_power && !is_logarithm && !/[\^]/.test(char)) {
+        if (/[+\-*:]/.test(char)) {
+          if (/^&\d+/.test(aux)) {
+            const token = this.tokens.get(aux);
+            if (!!token) {
+              aux = "(" + this.translate(token) + ")";
+            }
+          }
+          accumulator += aux + char;
+          aux = "";
+        } else {
+          aux += char;
+        }
+        if (i == line.length - 1) {
+          if (/^&\d+/.test(aux)) {
+            const token = this.tokens.get(aux);
+            if (!!token) {
+              aux = "(" + token + ")";
+            }
+          }
+          accumulator += aux;
+          aux = "";
+        }
       }
 
-      // if (/[&\d\w]/.test(char)) {
-      //   if (/[^&\d]/.test(char)) {
-      //     is_token = false;
-      //   }
-      //   if (!flag) {
-      //     lhs += char;
-      //   } else {
-      //     rhs += char;
-      //   }
-      // } else {
-      //   if (char === "\\") {
-      //     flag = true;
-      //   }
-      // }
+      if (is_logarithm) {
+        if (base) {
+          if (argument) {
+            if (i == line.length - 1 || /[+\-*:^=]/.test(char)) {
+              rhs = "&" + rhs;
+              if (i == line.length - 1) {
+                rhs += char;
+              }
+              if (/^&\d+$/.test(rhs)) {
+                const token = this.tokens.get(rhs);
+                if (!!token) {
+                  rhs = this.translate(token);
+                }
+              }
+
+              if (!/[&^]/.test(char)) {
+                accumulator += `log(${rhs})/log(${lhs})`;
+                if (/[+\-*:=]/.test(char)) {
+                  accumulator += char;
+                }
+              } else {
+                aux = `log(${rhs})/log(${lhs})`;
+              }
+              is_logarithm = false;
+              base = false;
+              argument = false;
+              lhs = "";
+              rhs = "";
+            } else {
+              rhs += char;
+            }
+          } else if (char === "&") {
+            argument = true;
+          } else {
+            lhs += char;
+          }
+        } else if (char === "_") {
+          base = true;
+        } else if (i == line.length - 1 || /[+\-*:^]/.test(char)) {
+          if (i == line.length - 1) {
+            rhs += char;
+          }
+          if (/^&\d+$/.test(rhs)) {
+            const token = this.tokens.get(rhs);
+            if (!!token) {
+              rhs = this.translate(token);
+            }
+          }
+
+          if (!/[&^]/.test(char)) {
+            accumulator += `log(${rhs})`;
+            if (/[+\-*:]/.test(char)) {
+              accumulator += char;
+            }
+          } else {
+            aux = `log(${rhs})`;
+          }
+
+          is_logarithm = false;
+          base = false;
+          rhs = "";
+        } else if (!argument) {
+          rhs += char;
+        }
+      } else if (aux == "log") {
+        is_logarithm = true;
+        aux = "";
+      }
+
+      if (is_power) {
+        if (i == line.length - 1 || /[+\-*:=]/.test(char)) {
+          if (/^&\d+$/.test(aux)) {
+            const token = this.tokens.get(aux);
+            if (!!token) {
+              lhs = this.translate(token);
+            }
+          }
+          if (i == line.length - 1) {
+            rhs += char;
+          }
+          rhs = this.translate(rhs);
+          accumulator += `pow(${aux}, ${rhs})`;
+          if (/[+\-*:=]/.test(char)) {
+            accumulator += char;
+          }
+          is_power = false;
+          aux = "";
+          rhs = "";
+        } else {
+          rhs += char;
+        }
+      } else if (!!aux && char === "^") {
+        is_power = true;
+      }
     }
 
     return accumulator;
   }
 
-  public get converted(): string {
-    return this.translate(this.transform(this.line));
+  public get convert(): string {
+    const line = this.clean(this.line);
+    return this.translate(this.transform(line));
   }
 }
 
 (async () => {
-  // const line = `31^n*(\\(23*3)/3+(9*8))*8-(3*8)*\\8-8/32`;
-  // const line = `8 + \\3 + 8/(a * 8 - 8) + 8`;
-  const line = "\\2/\\2/3+\\4/3";
-  console.log("Original:", line);
-  const conv = new Translate(line);
-  console.log("Traducido:", conv.converted);
-  console.log(conv.tokens);
+  const DIR = resolve("files");
+  if (!existsSync(DIR)) {
+    mkdirSync(DIR, { recursive: true });
+  }
+  const READ = resolve(DIR, "M.txt");
+  if (!existsSync(READ)) {
+    console.error("El archivo no existe");
+  }
+  const lines = readFileSync(READ, "utf-8");
+  const new_array = [];
+  for (const line of lines.split("\n")) {
+    const translate = new Translate(line);
+    const new_line = translate.convert;
+    new_array.push(new_line);
+  }
+  const WRITE = resolve(DIR, "C.txt");
+  writeFileSync(WRITE, new_array.join("\n"), "utf-8");
+
+  return exit(1);
 })();
