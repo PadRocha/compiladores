@@ -1,5 +1,5 @@
-import {stdin, stdout, exit} from "process";
-import {createInterface} from "readline";
+import { stdin, stdout, exit } from "process";
+import { createInterface } from "readline";
 
 /**
  * Solicita una línea de entrada al usuario de forma asíncrona.
@@ -8,7 +8,7 @@ import {createInterface} from "readline";
  * @returns {Promise<string>} - Una promesa que se resuelve con la línea de entrada del usuario.
  */
 async function getLine(question: string): Promise<string> {
-  const rl = createInterface({input: stdin, output: stdout});
+  const rl = createInterface({ input: stdin, output: stdout });
   return new Promise((response) => {
     rl.question(question, (line) => {
       rl.close();
@@ -55,21 +55,21 @@ class TernaryOperationTree {
   }
 
   /**
-   * Convierte el árbol de operaciones en una cadena de texto.
-   *
-   * @returns {string} - Una representación en cadena del árbol.
-   */
-  public toString(): string {
-    return this.root ? this.nodeToString(this.root) : "";
-  }
-
-  /**
    * Visualiza el árbol en la consola, mostrando su estructura jerárquica.
    */
   public visualize(): void {
     if (this.root) {
       this.printTree(this.root, "", true);
     }
+  }
+
+  /**
+   * Convierte el árbol de operaciones en una cadena de texto.
+   *
+   * @returns {string} - Una representación en cadena del árbol.
+   */
+  public toString(): string {
+    return this.root ? this.nodeToString(this.root) : "";
   }
 
   /**
