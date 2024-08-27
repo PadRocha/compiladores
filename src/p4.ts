@@ -1,5 +1,5 @@
-import { stdin, stdout, exit } from "process";
-import { createInterface } from "readline";
+import {stdin, stdout, exit} from "process";
+import {createInterface} from "readline";
 
 /**
  * Solicita una línea de entrada al usuario de forma asíncrona.
@@ -8,7 +8,7 @@ import { createInterface } from "readline";
  * @returns {Promise<string>} - Una promesa que se resuelve con la línea de entrada del usuario.
  */
 async function getLine(question: string): Promise<string> {
-  const rl = createInterface({ input: stdin, output: stdout });
+  const rl = createInterface({input: stdin, output: stdout});
   return new Promise((response) => {
     rl.question(question, (line) => {
       rl.close();
@@ -21,10 +21,10 @@ async function getLine(question: string): Promise<string> {
  * Clase que representa un nodo en el árbol de operaciones ternarias.
  * Cada nodo puede tener tres hijos (izquierdo, medio, derecho).
  */
-class TernaryOperationNode {
-  public left: TernaryOperationNode | null;
-  public middle: TernaryOperationNode | null;
-  public right: TernaryOperationNode | null;
+class TernaryNode {
+  public left: TernaryNode | null;
+  public middle: TernaryNode | null;
+  public right: TernaryNode | null;
 
   /**
    * @param {string} value - El valor del nodo (un operador o un número).
@@ -40,8 +40,8 @@ class TernaryOperationNode {
  * Clase que representa el árbol de operaciones ternarias.
  * El árbol se construye a partir de una expresión matemática.
  */
-class TernaryOperationTree {
-  private root: TernaryOperationNode | null;
+class TernaryTree {
+  private root: TernaryNode | null;
   private index: number;
 
   /**
@@ -110,7 +110,7 @@ class TernaryOperationTree {
         }
 
         // Detectamos números y el punto decimal.
-        if (/\d|\./.test(char)) {
+        if (/[\d\.]/.test(char)) {
           numberBuffer += char;
         } else {
           if (numberBuffer) {
@@ -137,9 +137,9 @@ class TernaryOperationTree {
    * Función principal que comienza el proceso de parseo de la expresión.
    *
    * @param {string[]} tokens - Lista de tokens de la expresión matemática.
-   * @returns {TernaryOperationNode | null} - Nodo raíz del árbol generado.
+   * @returns {TernaryNode | null} - Nodo raíz del árbol generado.
    */
-  private parseExpression(tokens: string[]): TernaryOperationNode | null {
+  private parseExpression(tokens: string[]): TernaryNode | null {
     return this.parseAdditionSubtraction(tokens); // Comenzamos por la operación de menor precedencia.
   }
 
@@ -147,15 +147,15 @@ class TernaryOperationTree {
    * Parseo de los elementos primarios como números, logaritmos, raíces o paréntesis.
    *
    * @param {string[]} tokens - Lista de tokens de la expresión matemática.
-   * @returns {TernaryOperationNode | null} - Nodo correspondiente al término primario.
+   * @returns {TernaryNode | null} - Nodo correspondiente al término primario.
    */
-  private parsePrimary(tokens: string[]): TernaryOperationNode | null {
+  private parsePrimary(tokens: string[]): TernaryNode | null {
     let token = tokens[this.index];
 
     // Parseo de logaritmos (log)
     if (token === "log") {
       this.index++;
-      const logNode = new TernaryOperationNode("log");
+      const logNode = new TernaryNode("log");
       if (tokens[this.index] === "(") {
         this.index++; // Saltamos el paréntesis izquierdo
         logNode.middle = this.parseAdditionSubtraction(tokens); // Parseamos la expresión dentro de los paréntesis
@@ -167,7 +167,7 @@ class TernaryOperationTree {
     // Parseo de raíces cuadradas (sqrt)
     if (token === "sqrt") {
       this.index++;
-      const sqrtNode = new TernaryOperationNode("sqrt");
+      const sqrtNode = new TernaryNode("sqrt");
       if (tokens[this.index] === "(") {
         this.index++; // Saltamos el paréntesis izquierdo
         sqrtNode.middle = this.parseAdditionSubtraction(tokens); // Parseamos la expresión dentro de los paréntesis
@@ -188,19 +188,19 @@ class TernaryOperationTree {
 
     // Caso por defecto: retornamos el número u operador
     this.index++;
-    return new TernaryOperationNode(token);
+    return new TernaryNode(token);
   }
 
   /**
    * Parseo de operaciones de exponenciación.
    *
    * @param {string[]} tokens - Lista de tokens de la expresión matemática.
-   * @returns {TernaryOperationNode | null} - Nodo que representa una operación de exponenciación.
+   * @returns {TernaryNode | null} - Nodo que representa una operación de exponenciación.
    */
-  private parseExponent(tokens: string[]): TernaryOperationNode | null {
+  private parseExponent(tokens: string[]): TernaryNode | null {
     let node = this.parsePrimary(tokens);
     while (this.index < tokens.length && tokens[this.index] === "^") {
-      const opNode = new TernaryOperationNode(tokens[this.index++]);
+      const opNode = new TernaryNode(tokens[this.index++]);
       opNode.left = node;
       opNode.middle = this.parsePrimary(tokens); // El exponente es una expresión primaria
       node = opNode;
@@ -212,17 +212,15 @@ class TernaryOperationTree {
    * Parseo de operaciones de multiplicación y división.
    *
    * @param {string[]} tokens - Lista de tokens de la expresión matemática.
-   * @returns {TernaryOperationNode | null} - Nodo que representa una operación de multiplicación o división.
+   * @returns {TernaryNode | null} - Nodo que representa una operación de multiplicación o división.
    */
-  private parseMultiplicationDivision(
-    tokens: string[],
-  ): TernaryOperationNode | null {
+  private parseMultiplicationDivision(tokens: string[]): TernaryNode | null {
     let node = this.parseExponent(tokens);
     while (
       this.index < tokens.length &&
       (tokens[this.index] === "*" || tokens[this.index] === "/")
     ) {
-      const opNode = new TernaryOperationNode(tokens[this.index++]);
+      const opNode = new TernaryNode(tokens[this.index++]);
       opNode.left = node;
       opNode.right = this.parseExponent(tokens); // El operando derecho es una operación de exponenciación
       node = opNode;
@@ -234,17 +232,15 @@ class TernaryOperationTree {
    * Parseo de operaciones de suma y resta.
    *
    * @param {string[]} tokens - Lista de tokens de la expresión matemática.
-   * @returns {TernaryOperationNode | null} - Nodo que representa una operación de suma o resta.
+   * @returns {TernaryNode | null} - Nodo que representa una operación de suma o resta.
    */
-  private parseAdditionSubtraction(
-    tokens: string[],
-  ): TernaryOperationNode | null {
+  private parseAdditionSubtraction(tokens: string[]): TernaryNode | null {
     let node = this.parseMultiplicationDivision(tokens);
     while (
       this.index < tokens.length &&
       (tokens[this.index] === "+" || tokens[this.index] === "-")
     ) {
-      const opNode = new TernaryOperationNode(tokens[this.index++]);
+      const opNode = new TernaryNode(tokens[this.index++]);
       opNode.left = node;
       opNode.right = this.parseMultiplicationDivision(tokens); // El operando derecho es una multiplicación/división
       node = opNode;
@@ -255,12 +251,12 @@ class TernaryOperationTree {
   /**
    * Imprime la estructura del árbol de forma jerárquica en la consola.
    *
-   * @param {TernaryOperationNode | null} node - Nodo actual a imprimir.
+   * @param {TernaryNode | null} node - Nodo actual a imprimir.
    * @param {string} indent - Indentación para mantener la jerarquía.
    * @param {boolean} last - Indica si el nodo es el último hijo.
    */
   private printTree(
-    node: TernaryOperationNode | null,
+    node: TernaryNode | null,
     indent: string,
     last: boolean,
   ): void {
@@ -280,10 +276,10 @@ class TernaryOperationTree {
   /**
    * Convierte un nodo del árbol en una cadena de texto en notación infija.
    *
-   * @param {TernaryOperationNode | null} node - Nodo que se convertirá a cadena.
+   * @param {TernaryNode | null} node - Nodo que se convertirá a cadena.
    * @returns {string} - Representación en cadena del subárbol.
    */
-  private nodeToString(node: TernaryOperationNode | null): string {
+  private nodeToString(node: TernaryNode | null): string {
     if (!node) return "";
     const leftStr = this.nodeToString(node.left);
     const middleStr = this.nodeToString(node.middle);
@@ -295,10 +291,10 @@ class TernaryOperationTree {
   /**
    * Convierte un nodo del árbol a código C.
    *
-   * @param {TernaryOperationNode | null} node - Nodo que se convertirá a código C.
+   * @param {TernaryNode | null} node - Nodo que se convertirá a código C.
    * @returns {string} - Representación en código C del subárbol.
    */
-  private nodeToCCode(node: TernaryOperationNode | null): string {
+  private nodeToCCode(node: TernaryNode | null): string {
     if (!node) return "";
 
     // Convertir el nodo y sus hijos a código C.
@@ -329,7 +325,7 @@ class TernaryOperationTree {
   // Solicita al usuario ingresar una expresión matemática.
   const expression = await getLine("Ingresa expresión: ");
   // Crea el árbol de operaciones a partir de la expresión.
-  const tree = new TernaryOperationTree(expression);
+  const tree = new TernaryTree(expression);
   // Visualiza el árbol en la consola.
   tree.visualize();
   // Converte el árbol a un código en C
