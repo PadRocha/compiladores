@@ -1,5 +1,5 @@
-import { stdin, stdout, exit } from "process";
-import { createInterface } from "readline";
+import {stdin, stdout, exit} from "process";
+import {createInterface} from "readline";
 
 /**
  * Solicita una línea de entrada al usuario de forma asíncrona.
@@ -8,7 +8,7 @@ import { createInterface } from "readline";
  * @returns {Promise<string>} - Una promesa que se resuelve con la línea de entrada del usuario.
  */
 async function getLine(question: string): Promise<string> {
-  const rl = createInterface({ input: stdin, output: stdout });
+  const rl = createInterface({input: stdin, output: stdout});
   return new Promise((response) => {
     rl.question(question, (line) => {
       rl.close();
@@ -20,6 +20,8 @@ async function getLine(question: string): Promise<string> {
 /**
  * Clase que representa un nodo en el árbol de operaciones ternarias.
  * Cada nodo puede tener tres hijos (izquierdo, medio, derecho).
+ *
+ * @class
  */
 class TernaryNode {
   public left: TernaryNode | null;
@@ -37,12 +39,34 @@ class TernaryNode {
 }
 
 /**
+ * Representa un error relacionado con una expresión matemática inválida.
+ *
+ * @class
+ * @extends {Error}
+ */
+class ExpressionError extends Error {
+  /**
+   * Construye un ExpressionError con una lista de errores.
+   *
+   * @param {string[]} errors - La lista de errores encontrados en la expresión.
+   */
+  constructor(public errors: string[]) {
+    super("Expression contains errors");
+  }
+}
+
+/**
  * Clase que representa el árbol de operaciones ternarias.
  * El árbol se construye a partir de una expresión matemática.
+ *
+ * @class
  */
 class TernaryTree {
   private root: TernaryNode | null;
   private index: number;
+  private errors: string[] = [];
+  private intermediate_code: string[] = [];
+  private memory_index = 0;
 
   /**
    * @param {string} expression - La expresión matemática que será parseada en un árbol.
@@ -52,6 +76,11 @@ class TernaryTree {
     const tokens = this.tokenize(expression);
     this.root = null;
     this.index = 0;
+    this.validateTokens(tokens);
+    // En caso de encontrar errores interrumpe el proceso
+    if (this.errors.length > 0) {
+      throw new ExpressionError(this.errors);
+    }
     // Parseamos la expresión en un árbol.
     this.root = this.parseExpression(tokens);
   }
@@ -75,12 +104,16 @@ class TernaryTree {
   }
 
   /**
-   * Convierte el árbol de operaciones a código C.
+   * Genera el código intermedio a partir del árbol ternario.
    *
-   * @returns {string} - Representación en cadena del árbol en sintaxis C.
+   * @returns {string[]} El código intermedio en formato de arreglo de cadenas.
    */
-  public toCCode(): string {
-    return this.root ? this.nodeToCCode(this.root) : "";
+  public generateIntermediateCode(): string[] {
+    this.intermediate_code = [];
+    if (this.root) {
+      this.traverseTree(this.root);
+    }
+    return this.intermediate_code;
   }
 
   /**
@@ -93,6 +126,7 @@ class TernaryTree {
     const tokens: string[] = [];
     let numberBuffer = "";
     let functionBuffer = "";
+    let decimalPointCount = 0;
 
     // Recorremos cada carácter de la expresión.
     for (let i = 0; i < expression.length; i++) {
@@ -112,12 +146,19 @@ class TernaryTree {
         }
 
         // Detectamos números y el punto decimal.
-        if (/[\d\.]/.test(char)) {
+        if (/[\d]/.test(char)) {
+          numberBuffer += char;
+        } else if (char === ".") {
+          decimalPointCount++;
+          if (decimalPointCount > 1) {
+            this.errors.push(`Invalid number format: ${numberBuffer + char}`);
+          }
           numberBuffer += char;
         } else {
           if (numberBuffer) {
             tokens.push(numberBuffer);
             numberBuffer = "";
+            decimalPointCount = 0;
           }
 
           // Agregamos otros caracteres no numéricos como operadores.
@@ -134,6 +175,34 @@ class TernaryTree {
     }
 
     return tokens;
+  }
+
+  /**
+   * Valida los tokens extraídos de la expresión para detectar errores de sintaxis.
+   *
+   * @param {string[]} tokens - El arreglo de tokens a validar.
+   */
+  private validateTokens(tokens: string[]) {
+    let openParentheses = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token === "(") openParentheses++;
+      if (token === ")") openParentheses--;
+      if (openParentheses < 0)
+        this.errors.push("Unmatched closing parenthesis");
+
+      if (/[+\-*/^]/.test(token) && /[+\-*/^]/.test(tokens[i + 1])) {
+        this.errors.push(`Operator repetition: "${tokens[i]}${tokens[i + 1]}"`);
+      }
+
+      if (/[+*/^]/.test(token) && (i === 0 || i === tokens.length - 1)) {
+        this.errors.push(`Incomplete operation near "${token}"`);
+      }
+    }
+
+    if (openParentheses !== 0) {
+      this.errors.push("Unmatched opening parenthesis");
+    }
   }
 
   /**
@@ -184,6 +253,15 @@ class TernaryTree {
         if (tokens[this.index] === ")") this.index++;
       }
       return sqrtNode;
+    }
+
+    // Parseo de tokens negativos
+    if (token === "-") {
+      // Saltamos al token izquierdo
+      this.index++;
+      const negNode = new TernaryNode("-");
+      negNode.middle = this.parsePrimary(tokens);
+      return negNode;
     }
 
     // Parseo de expresiones entre paréntesis
@@ -299,52 +377,75 @@ class TernaryTree {
     const leftStr = this.nodeToString(node.left);
     const middleStr = this.nodeToString(node.middle);
     const rightStr = this.nodeToString(node.right);
-    // Construye la cadena para el nodo actual en notación infija.
     return `(${leftStr} ${node.value} ${middleStr} ${rightStr})`;
   }
 
   /**
-   * Convierte un nodo del árbol a código C.
+   * Recorre el árbol ternario y genera el código intermedio para la evaluación de la expresión.
    *
-   * @param {TernaryNode | null} node - Nodo que se convertirá a código C.
-   * @returns {string} - Representación en código C del subárbol.
+   * @param {TernaryNode | null} node - El nodo actual del árbol a recorrer.
+   * @returns {number} El índice en el que se almacena el resultado de la operación actual.
    */
-  private nodeToCCode(node: TernaryNode | null): string {
-    if (!node) return "";
+  private traverseTree(node: TernaryNode | null): number {
+    if (!node) return -1;
+    if (!node.left && !node.middle && !node.right) {
+      const varIndex = this.memory_index++;
+      this.intermediate_code.push(`a[${varIndex}] = ${node.value}`);
+      return varIndex;
+    }
 
-    // Convertir el nodo y sus hijos a código C.
-    const leftStr = this.nodeToCCode(node.left);
-    const middleStr = this.nodeToCCode(node.middle);
-    const rightStr = this.nodeToCCode(node.right);
+    const left = this.traverseTree(node.left);
+    const middle = this.traverseTree(node.middle);
+    const right = this.traverseTree(node.right);
+    const resultIndex = this.memory_index++;
 
     switch (node.value) {
-      case "log":
-        return `log(${middleStr})`;
-      case "sqrt":
-        return `sqrt(${middleStr})`;
-      case "^":
-        return `pow(${leftStr}, ${middleStr})`;
-      case "*":
-      case "/":
       case "+":
       case "-":
-        return `(${leftStr} ${node.value} ${rightStr})`;
-      default:
-        return node.value;
+      case "*":
+      case "/":
+        this.intermediate_code.push(
+          `a[${resultIndex}] = a[${left}] ${node.value} a[${right}]`,
+        );
+        break;
+      case "^":
+        this.intermediate_code.push(
+          `a[${resultIndex}] = pow(a[${left}], a[${middle}])`,
+        );
+        break;
+      case "log":
+        this.intermediate_code.push(`a[${resultIndex}] = log(a[${middle}])`);
+        break;
+      case "sqrt":
+        this.intermediate_code.push(`a[${resultIndex}] = sqrt(a[${middle}])`);
+        break;
+      case "-":
+        this.intermediate_code.push(`a[${resultIndex}] = -a[${middle}]`);
+        break;
     }
+
+    return resultIndex;
   }
 }
 
 // Función autoejecutable para solicitar una expresión y visualizar el árbol de operaciones.
 (async () => {
-  // Solicita al usuario ingresar una expresión matemática.
-  const expression = await getLine("Ingresa expresión: ");
-  // Crea el árbol de operaciones a partir de la expresión.
-  const tree = new TernaryTree(expression);
-  // Visualiza el árbol en la consola.
-  tree.visualize();
-  // Converte el árbol a un código en C
-  console.log(tree.toString());
-  // Termina el proceso con éxito.
+  try {
+    // Solicita al usuario ingresar una expresión matemática.
+    const expression = await getLine("Ingresa expresión: ");
+    const tree = new TernaryTree(expression);
+    // Visualiza el árbol en la consola.
+    tree.visualize();
+    // Genera el código intermedio
+    const intermediate_code = tree.generateIntermediateCode();
+    console.log(intermediate_code.join("\n"));
+  } catch (error) {
+    if (error instanceof ExpressionError) {
+      console.error("Errores encontrados:", error.errors);
+    } else {
+      console.error("Error inesperado: ", error);
+    }
+    return exit(1);
+  }
   return exit(0);
 })();
